@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import argparse
 import io
+import ipaddress
 import shutil
 import socket
 import tempfile
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, abort, jsonify, request, send_file
 from PIL import Image, ImageDraw
 
 from .core import inspect_file
@@ -26,11 +28,48 @@ from .strip import strip_file
 HOST, PORT = "127.0.0.1", 8377
 TMP = Path(tempfile.gettempdir()) / "metastrip-web"
 JOB_MAX_AGE = 24 * 3600
+MAX_UPLOAD = 200 * 1024 * 1024  # generous for big PDFs/RAWs, still bounded
 
 # runtime state set by main()
 STATE = {"lan": False, "port": PORT}
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD
+
+
+def _is_trusted_host(host_header: str) -> bool:
+    """Allow localhost and IP-literal hosts; reject DNS names.
+
+    Blocks DNS-rebinding (a malicious page on attacker.example resolving to
+    127.0.0.1 still arrives with the attacker's name in the Host header)
+    while keeping localhost and LAN-by-IP access (--lan / phone QR) working.
+    """
+    if not host_header:
+        return False
+    host = host_header.strip()
+    if host.startswith("["):  # bracketed IPv6, e.g. [::1]:8377
+        host = host[1 : host.find("]")]
+    else:
+        host = host.rsplit(":", 1)[0]
+    if host.lower() == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+@app.before_request
+def _reject_untrusted_requests():
+    if not _is_trusted_host(request.host):
+        abort(403)
+    if request.method == "POST":
+        # Browsers send Origin on cross-origin POSTs; a mismatch means a
+        # foreign web page is blind-POSTing at this server (CSRF).
+        origin = request.headers.get("Origin")
+        if origin and urlsplit(origin).netloc != request.host:
+            abort(403)
 
 
 def _lan_ip() -> str:
