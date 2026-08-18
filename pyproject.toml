@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metastrip"
+version = "0.1.0"
+description = "Inspect and strip privacy-sensitive metadata from images and documents"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.4",
+    "piexif>=1.1.3",
+    "rich>=13.7",
+    "defusedxml>=0.7",
+    "pikepdf>=9.0",
+    "pillow-heif>=0.16",
+    "flask>=3.0",
+    "qrcode>=7.4",
+]
+
+[project.scripts]
+metastrip = "metastrip.cli:main"
+metastrip-web = "metastrip.webapp:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
